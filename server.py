@@ -3,6 +3,17 @@ import socket
 import select 
 import sys 
 from _thread import *
+import random
+import re
+
+def RSAenc(rsaMsg, kpu):
+    return pow(int(rsaMsg), kpu[1], kpu[0])
+
+def isRSA(msg):
+    return re.search("^#rsa")
+
+def getRSA(msg):
+    return re.search("(?<=rsa\s).*").group(0)
   
 """The first argument AF_INET is the address domain of the 
 socket. This is used when we have an Internet Domain with 

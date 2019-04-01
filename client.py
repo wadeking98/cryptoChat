@@ -3,6 +3,8 @@ import socket
 import select 
 import sys 
 import re
+import sympy
+import random
 
 encMode = None
 
@@ -47,6 +49,28 @@ def getEnc(mes):
     return re.search("#enc\((.*)\)", mes).group(1)
 
 
+def RSAinit(rang_low, rang_mid, rang_high):
+    p = sympy.randprime(rang_low,rang_mid)
+    q = sympy.randprime(rang_mid,rang_high)
+    
+    n = p*q
+
+    phi = (p-1)*(q-1)
+
+    
+    b = random.randint(2, phi)
+    #make sure gcd of b and phi(n) == 1
+    while(egcd(b, phi)[0] != 1):
+        b = random.randint(2, phi)
+    
+    a = modinv(b, n)
+
+    return ((n,b),(p,q,a))
+
+def RSAdec(rsaMsg, key):
+    return pow(int(rsaMes), kpr[1][2], kpr[0][0])
+
+
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
 if len(sys.argv) != 3: 
@@ -54,7 +78,15 @@ if len(sys.argv) != 3:
     exit() 
 IP_address = str(sys.argv[1]) 
 Port = int(sys.argv[2]) 
-server.connect((IP_address, Port)) 
+server.connect((IP_address, Port))
+
+#initialise RSA key
+key = RSAinit(100,200,300)
+kpu = key[0]
+kpr = key[1]
+print(key)
+
+server.send(("#rsa "+str(kpu)).encode())
   
 while True: 
   
