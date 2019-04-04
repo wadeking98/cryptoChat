@@ -17,6 +17,11 @@ params = None
 #------------ mod inv and gcd function courtesy of wikibooks
 
 def egcd(a, b):
+    """
+    Paramenters: int(a) int(b)
+
+    Returns: greatest common denominator of a and b 
+    """
     if a == 0:
         return (b, 0, 1)
     else:
@@ -24,38 +29,72 @@ def egcd(a, b):
         return (g, x - (b // a) * y, y)
 
 def modinv(a, m):
+    """
+    Parameters: int(a) int(b)
+
+    Returns: multiplicative inverse of a mod m
+    """
     g, x, y = egcd(a, m)
     if g != 1:
         raise Exception('modular inverse does not exist')
     else:
         return x % m 
 
-def stringToTup(msg):
-    msg = msg.strip('#rsa ()\n')
-    msg = msg.split(',')
-    return tuple(msg)
-
-
-
 
 def isParams(mes):
+    """
+    Parameters: str(mes)
+
+    Returns: match obj iff mes is in parameter format
+    """
     return re.search("#(affine|cbc)\s.*",mes)
 
 def isEnc(mes):
+    """
+    Parameters: str(mes)
+
+    Returns: match obj iff mes is in encryption format
+    """
     return re.search("#enc\(.*\)", mes)
 
 def getParamsMode(mes):
+    """
+    Parameters: str(mes)
+
+    Returns: the parmeter mode in the message
+    """
     return re.search("#(\w+)",mes).group(1)
 
 def getParams(mes):
+    """
+    Parameters: str(mes)
+
+    Returns: the parameters in the message
+    """
     return re.search("#(\w+)\s(.*)",mes).group(2)
 
 
 def getEnc(mes):
+    """
+    Parameters: str(mes)
+
+    Returns: cypher text in the encrypted message
+    """
     return re.search("#enc\((.*)\)", mes).group(1)
 
 
 def RSAinit(rang_low, rang_mid, rang_high):
+    """
+    Parameters: int(rang_low) int(rang_mid) int(rang_high)
+
+    Description: uses rang_low, rang_mid, rang_high to generate two primes
+    p, q such that rang_low <= p < rang_mid and rang_mid <= q < rang_high
+    then it uses p and q to generate an RSA public and private key
+
+    Returns: (public key, private key)
+
+    Returns: match obj iff mes is in parameter format
+    """
     p = sympy.randprime(rang_low,rang_mid)
     q = sympy.randprime(rang_mid,rang_high)
     
@@ -74,12 +113,28 @@ def RSAinit(rang_low, rang_mid, rang_high):
     return ((n,b),(p,q,a))
 
 def RSAdec(rsaMsg, key):
+    """
+    Parameters: int(rsaMsg) tuple((public key), (private key))
+
+    Returns: the decoded RSA message
+    """
     return pow(int(rsaMsg), int(key[1][2]), int(key[0][0]))
 
 def genSubInv(k):
+    """
+    Parameters: dict(k)
+
+    Returns: a dict where the key, value pairs of k are swapped
+    """
     return {v:k for k,v in k.items()}
 
 def cbcEk(msg, charPnt, k, IV):
+    """
+        Parameters: str(msg) int(charPnt) the lats index of the msg, dict(k) the substitution cypher,
+        int(IV) the initial vector
+
+        Returns (c,cyph) c the last cyphertext char, cyph the cyphertext message
+    """
     if(charPnt == 0):
         c = k[ord(msg[0])^IV]
         cyph = chr(c)
@@ -91,6 +146,11 @@ def cbcEk(msg, charPnt, k, IV):
         return (c, cyph)
 
 def cbcDk(cyph, kinv, IV):
+    """
+    Parameters: str(cyph) the cypher text, dict(k) the inverse substitution cypher, int(IV) the initial vector
+
+    Returns: the decoded message
+    """
     plntxt = chr(kinv[ord(cyph[0])]^IV)
     
     for i in range(1, len(cyph)):
@@ -100,6 +160,11 @@ def cbcDk(cyph, kinv, IV):
     return plntxt
 
 def affineEnc(params, message):
+    """
+    Parameters: tuple(params) a,b,n needed for affine encryption, str(message)
+
+    Returns: the encoded message
+    """
     cypher = "#enc("
                 
     a, b, n = params
