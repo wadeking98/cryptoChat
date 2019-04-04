@@ -6,8 +6,33 @@ import _thread
 from _thread import *
 import random
 import re
+import json
 
 mutex = _thread.allocate_lock()
+
+def genSub():
+    k = {}
+
+    a = list(range(0,256))
+    j = 255
+
+    for i in range(0,256):
+        #get a random value from a
+        rand = random.randint(0,j)
+        #print(rand)
+        val = a[rand]
+
+        #remove that value from a
+        a.pop(rand)
+        j -= 1
+
+        #insert value into dictionary
+        k[i] = val
+    return k
+
+def genIV():
+    return random.randint(0,255)
+
 
 def RSAenc(rsaMsg, kpu):
     return pow(int(rsaMsg), int(kpu[1]), int(kpu[0]))
@@ -29,6 +54,50 @@ def stringToTup(msg):
     msg = msg.strip('#rsa ()\n')
     msg = msg.split(',')
     return tuple(msg)
+
+def genAffineKeys(list_of_clients):
+    #lock this critical section
+    mutex.acquire()
+    n = random.randint(126, 255)
+    a = random.randint(1, n)
+    #make sure a is invertable
+    while(egcd(a,n)[0]!=1):
+        n = random.randint(126, 255)
+        a = random.randint(1,n)
+
+    b = random.randint(1, n)
+
+    print("affine cypher parameters: "+str((a,b,n)))
+
+    for conn in list_of_clients:
+        kpu = client_pub_keys[conn]
+
+        package = (RSAenc(a,kpu), RSAenc(b,kpu), RSAenc(n, kpu))
+        print("encrypted affine cypher params: "+str(package))
+
+        message_to_send = "#affine "+json.dumps(package)
+
+        conn.send(message_to_send.encode())
+    #unlock mutex
+    mutex.release()
+
+def genCbcKeys(list_of_clients):
+    mutex.acquire()
+    k = genSub()
+    IV = genIV()
+
+
+    for conn in list_of_clients:
+        kpu = client_pub_keys[conn]
+
+        kenc = {RSAenc(key, kpu):RSAenc(val,kpu) for key, val in k.items()}
+        IVenc = RSAenc(IV, kpu)
+
+        package = (IVenc, kenc)
+        message_to_send = "#cbc "+json.dumps(package)
+        
+        conn.send(message_to_send.encode())
+    mutex.release()
   
 """The first argument AF_INET is the address domain of the 
 socket. This is used when we have an Internet Domain with 
@@ -71,11 +140,13 @@ client_pub_keys = {}
 def clientthread(conn, addr):
   
     # sends a message to the client whose user object is conn 
-    conn.send("Welcome to CryptoChat! type #quit to leave or #help for help".encode()) 
+    conn.send("Welcome to CryptoChat! type #quit to leave or #help for help".encode())
+    message_to_send = "<" + addr[0] + "> has entered the chat"
+    broadcast(message_to_send, conn)
   
     while True: 
             try: 
-                message = conn.recv(2048) 
+                message = conn.recv(8192) 
                 if message: 
                     message = message.decode().strip('\n')
                     """prints the message and address of the 
@@ -87,6 +158,7 @@ def clientthread(conn, addr):
                         remove(conn)
                         message_to_send = "<" + addr[0] + "> has left the chat"
                         broadcast(message_to_send, conn)
+                        break
                         #server ignores #help messages
                     if("#help" == message):
                         pass
@@ -97,31 +169,11 @@ def clientthread(conn, addr):
                         client_pub_keys.update({conn : kpu})
                     #client has requested keys for affine cypher
                     elif("#affine" == message):
-                        print("got here")
-                        #lock this critical section
-                        mutex.acquire()
-                        print("lock aquired")
-                        n = 126
-                        a = random.randint(1, 126)
-                        #make sure a is invertable
-                        while(egcd(a,n)[0]!=1):
-                            a = random.randint(1,126)
+                        genAffineKeys(list_of_clients)
+                    
+                    elif("#cbc" == message):
+                        genCbcKeys(list_of_clients)
 
-                        b = random.randint(1, 126)
-
-                        print("affine cypher parameters: "+str((a,b,n)))
-
-                        for conn in list_of_clients:
-                            kpu = client_pub_keys[conn]
-
-                            package = (RSAenc(a,kpu), RSAenc(b,kpu), RSAenc(n, kpu))
-                            print("encrypted affine cypher params: "+str(package))
-
-                            message_to_send = "#affine "+str(package)
-
-                            conn.send(message_to_send.encode())
-                        #unlock mutex
-                        mutex.release()
                     elif("#list" == message):
                         conn.send(str(list_of_clients).encode())
                         

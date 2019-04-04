@@ -5,6 +5,7 @@ import sys
 import re
 import sympy
 import random
+import json
 
 encMode = None
 params = None
@@ -38,7 +39,7 @@ def stringToTup(msg):
 
 
 def isParams(mes):
-    return re.search("#(affine)\s\(.*\)",mes)
+    return re.search("#(affine|cbc)\s.*",mes)
 
 def isEnc(mes):
     return re.search("#enc\(.*\)", mes)
@@ -47,7 +48,7 @@ def getParamsMode(mes):
     return re.search("#(\w+)",mes).group(1)
 
 def getParams(mes):
-    return re.search("#(\w+)\s(\(.*\))",mes).group(2)
+    return re.search("#(\w+)\s(.*)",mes).group(2)
 
 
 def getEnc(mes):
@@ -74,6 +75,41 @@ def RSAinit(rang_low, rang_mid, rang_high):
 
 def RSAdec(rsaMsg, key):
     return pow(int(rsaMsg), int(key[1][2]), int(key[0][0]))
+
+def genSubInv(k):
+    return {v:k for k,v in k.items()}
+
+def cbcEk(msg, charPnt, k, IV):
+    if(charPnt == 0):
+        c = k[ord(msg[0])^IV]
+        cyph = chr(c)
+        return (c, cyph)
+    else:
+        e, cyph = cbcEk(msg, charPnt-1, k, IV)
+        c = k[ord(msg[charPnt]) ^ e]
+        cyph += chr(c)
+        return (c, cyph)
+
+def cbcDk(cyph, kinv, IV):
+    plntxt = chr(kinv[ord(cyph[0])]^IV)
+    
+    for i in range(1, len(cyph)):
+        p = kinv[ord(cyph[i])]^ord(cyph[i-1])
+        plntxt += chr(p)
+        
+    return plntxt
+
+def affineEnc(params, message):
+    cypher = "#enc("
+                
+    a, b, n = params
+    for c in message:
+        cypher += (chr((a*ord(c) + b)%n))
+    cypher+=")"
+
+    return cypher
+
+    
 
 
 
@@ -110,8 +146,9 @@ while True:
     read_sockets,write_socket, error_socket = select.select(sockets_list,[],[]) 
   
     for socks in read_sockets: 
-        if socks == server: 
-            message = socks.recv(2048)
+        if socks == server:
+            #MESSAGE RECIEVED
+            message = socks.recv(8192)
             message = message.decode()
             #message is encrypted we have decryption enabled
             if isEnc(message) and encMode:
@@ -132,16 +169,32 @@ while True:
                             chval += n
                         plaintext += (chr(chval))
                     print(addr+"> "+plaintext)
-            elif(isParams(message)):
-                print("Affine Cypher updated")
-                encMode = getParamsMode(message)
-                encParams = getParams(message)
-                encParams = stringToTup(encParams)
 
-                params = [RSAdec(int(x), key) for x in encParams]
+                elif encMode == "cbc":
+                    IV, k = params
+                    kinv = genSubInv(k)
+
+                    plaintext = cbcDk(message, kinv, IV)
+                    print(addr+"> "+plaintext)
+
+
+
+            elif(isParams(message)):
+                print("Cypher updated")
+                encMode = getParamsMode(message)
+                encParams = json.loads(getParams(message))
+
+                if(encMode == "affine"):
+                    params = [RSAdec(int(x), key) for x in encParams]
+                elif(encMode == "cbc"):
+                    IV = RSAdec(encParams[0], key)
+                    k = {RSAdec(ky, key):RSAdec(vl,key) for ky, vl in encParams[1].items()}
+
+                    params = (IV, k)                
             else:
                 print(message)
         else: 
+            #MESSAGE SENT
             message = sys.stdin.readline() 
             
 
@@ -149,16 +202,16 @@ while True:
             
             if(encMode and isEnc(message)):
                 message = getEnc(message)
-                cypher = "#enc("
                 #apply affine cipher
                 if(encMode == "affine"):
-                    a, b, n = params
-                    for c in message:
-                        cypher += (chr((a*ord(c) + b)%n))
-                    cypher+=")"
+                    cypher = affineEnc(params,message)
+                    server.send(cypher.encode())
+                elif(encMode == "cbc"):
+                    IV, k = params
+                    c, cypher = cbcEk(message, len(message)-1, k, IV)
+                    cypher = "#enc("+cypher+")"
                     server.send(cypher.encode())
             else:
-                #server.send(message.encode())
                 if("#quit" == message):
                     server.send(message.encode())
                     exit()
