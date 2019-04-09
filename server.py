@@ -98,6 +98,36 @@ def genCbcKeys(list_of_clients):
         
         conn.send(message_to_send.encode())
     mutex.release()
+
+def genAffineCbcKeys(list_of_clients):
+    mutex.acquire()
+
+    n = 255
+    a = random.randint(1, n)
+    #make sure a is invertable
+    while(egcd(a,n)[0]!=1):
+        #n = random.randint(126, 255)
+        a = random.randint(1,n)
+
+    b = random.randint(1, n)
+
+    k = genSub()
+    IV = genIV()
+
+    for conn in list_of_clients:
+        kpu = client_pub_keys[conn]
+
+        
+        kenc = {RSAenc(key, kpu):RSAenc(val,kpu) for key, val in k.items()}
+        IVek = RSAenc(IV, kpu)
+        
+        package = (RSAenc(a, kpu), RSAenc(b, kpu), RSAenc(n, kpu), IVek, kenc)
+        
+        message_to_send = "#affinecbc "+json.dumps(package)
+        conn.send(message_to_send.encode())
+
+    mutex.release()
+
   
 """The first argument AF_INET is the address domain of the 
 socket. This is used when we have an Internet Domain with 
@@ -110,7 +140,7 @@ server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 # checks whether sufficient arguments have been provided 
 if len(sys.argv) != 3: 
     print("Correct usage: script, IP address, port number")
-    exit() 
+    sys.exit(0) 
   
 # takes the first argument from command prompt as IP address 
 IP_address = str(sys.argv[1]) 
@@ -173,6 +203,9 @@ def clientthread(conn, addr):
                     
                     elif("#cbc" == message):
                         genCbcKeys(list_of_clients)
+
+                    elif("#affinecbc" == message):
+                        genAffineCbcKeys(list_of_clients)
 
                     elif("#list" == message):
                         conn.send(str(list_of_clients).encode())

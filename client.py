@@ -47,7 +47,7 @@ def isParams(mes):
 
     Returns: match obj iff mes is in parameter format
     """
-    return re.search("#(affine|cbc)\s.*",mes)
+    return re.search("#(affine|cbc|affinecbc)\s.*",mes)
 
 def isEnc(mes):
     """
@@ -174,6 +174,60 @@ def affineEnc(params, message):
 
     return cypher
 
+def affineDec(params, cypher):
+    """
+    Parameters: tuple(params) a,b,n needed for affine decryption, str(cypher)
+
+    Returns: the decoded message
+    """
+
+    a, b, n = params
+    plaintext = ""
+    #calculate the inverse of a
+    ainv = modinv(a, n)
+
+    #decrypt the message
+    for c in message:
+        chval = (ainv*ord(c) - ainv*b)%n
+        if chval < 0:
+            chval += n
+        plaintext += (chr(chval))
+    return plaintext
+
+def affineCbcEnc(params, message):
+    """
+    Parameters: tuple(params) a,b,n,IV,k where a,b,n are needed for affine encryption
+    and IV and k are needed for cbc encryption
+
+    Returns: affineEk(cbcEk(message))
+    """
+    a,b,n,IV,k = params
+
+    c, cbcCyph = cbcEk(message, len(message)-1, k, IV)
+
+    #return affineEnc((a,b,n), cbcCyph)
+    
+    return affineEnc((a,b,n),cbcCyph)
+
+def affineCbcDec(params, cypher):
+    """
+    Parameters: tuple(params) a,b,n,IV,k where a,b,n are needed for affine decryption
+    and IV and k are needed for cbc encryption
+
+    Returns: affineEk(cbcEk(message))
+    """
+    a,b,n,IV,k = params
+
+    kinv = genSubInv(k)
+
+    affDec = affineDec((a,b,n), cypher)
+
+    plaintext = cbcDk(affDec, kinv, IV)
+
+
+    return plaintext
+
+
     
 
 
@@ -181,7 +235,7 @@ def affineEnc(params, message):
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
 if len(sys.argv) != 3: 
     print("Correct usage: script, IP address, port number")
-    exit() 
+    sys.exit(0) 
 IP_address = str(sys.argv[1]) 
 Port = int(sys.argv[2]) 
 server.connect((IP_address, Port))
@@ -223,16 +277,7 @@ while True:
 
                 plaintext = ""
                 if encMode == "affine":
-                    a, b, n = params
-                    #calculate the inverse of a
-                    ainv = modinv(a, n)
-
-                    #decrypt the message
-                    for c in message:
-                        chval = (ainv*ord(c) - ainv*b)%n
-                        if chval < 0:
-                            chval += n
-                        plaintext += (chr(chval))
+                    plaintext = affineDec(params, message)
                     print(addr+"> "+plaintext)
 
                 elif encMode == "cbc":
@@ -242,6 +287,9 @@ while True:
                     plaintext = cbcDk(message, kinv, IV)
                     print(addr+"> "+plaintext)
 
+                elif encMode == "affinecbc":
+                    plaintext = affineCbcDec(params, message)
+                    print(addr+"> "+plaintext)
 
 
             elif(isParams(message)):
@@ -255,7 +303,15 @@ while True:
                     IV = RSAdec(encParams[0], key)
                     k = {RSAdec(ky, key):RSAdec(vl,key) for ky, vl in encParams[1].items()}
 
-                    params = (IV, k)                
+                    params = (IV,k)
+                elif(encMode == "affinecbc"):
+                    a = RSAdec(encParams[0], key)
+                    b = RSAdec(encParams[1], key)
+                    n = RSAdec(encParams[2], key)
+                    IV = RSAdec(encParams[3], key)
+                    k = {RSAdec(ky, key):RSAdec(vl,key) for ky, vl in encParams[4].items()}
+
+                    params = (a,b,n, IV, k)                
             else:
                 print(message)
         else: 
@@ -276,10 +332,13 @@ while True:
                     c, cypher = cbcEk(message, len(message)-1, k, IV)
                     cypher = "#enc("+cypher+")"
                     server.send(cypher.encode())
+                elif(encMode == "affinecbc"):
+                    cypher = affineCbcEnc(params, message)
+                    server.send(cypher.encode())
             else:
                 if("#quit" == message):
                     server.send(message.encode())
-                    exit()
+                    sys.exit(0)
                 elif("#help" == message):
                     message_to_send ="""+----------+
 |CryptoChat|
@@ -297,6 +356,10 @@ COMMANDS:
 #help | displays this help message
 
 #affine | sets encryption method to affine cypher
+
+#cbc | sets encryption method to cbc cypher
+
+#affinecbc | sets encryption method to affine-cbc mode
 
 #enc(text) | encrypts the text given in the parenthesis
 according to the encryption method
